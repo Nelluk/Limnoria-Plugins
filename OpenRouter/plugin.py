@@ -38,7 +38,7 @@ _ = PluginInternationalization("OpenRouter")
 
 
 class OpenRouter(callbacks.Plugin):
-	"""Use an OpenAI‑compatible Chat Completion API via OpenRouter (or any compatible endpoint)."""
+    """Use an OpenAI‑compatible Chat Completion API via OpenRouter (or any compatible endpoint)."""
     threaded = True
 
     # ---------------------------- lifecycle ---------------------------- #
@@ -181,4 +181,3 @@ class OpenRouter(callbacks.Plugin):
 Class = OpenRouter
 
 # vim: set shiftwidth=4 softtabstop=4 expandtab textwidth=79:
-
