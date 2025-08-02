@@ -113,23 +113,20 @@ conf.registerChannelValue(
     ),
 )
 
+"""
+How the plugin should isolate conversation history.
+
+• "channel"        → every alias & model in a channel shares one context
+• "channel+model" → history is separate for each underlying model (default)
+• "channel+alias" → history is separate per command alias
+"""
 conf.registerChannelValue(
     OpenRouter,
     "contextScope",
     registry.String(
-        "channel+model",  # default
-        _(
-            """
-            How the plugin should isolate conversation history.
-
-            • "channel"        → every alias & model in a channel shares one context
-            • "channel+model" → history is separate for each underlying model (default)
-            • "channel+alias" → history is separate per command alias
-            """
-        ),
-        validator=registry.String.SetValidator(
-            ["channel", "channel+model", "channel+alias"]
-        ),
+        "channel+model",   # default
+        _("How the plugin should isolate conversation history "
+          "(`channel`, `channel+model`, or `channel+alias`).")
     ),
 )
 
