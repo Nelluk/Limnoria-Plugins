@@ -1,5 +1,5 @@
 ###
-# Copyright (c) 2023, oddluck
+# Copyright (c) 2025 Nelluk
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -113,6 +113,25 @@ conf.registerChannelValue(
     ),
 )
 
+conf.registerChannelValue(
+    OpenRouter,
+    "contextScope",
+    registry.String(
+        "channel+model",  # default
+        _(
+            """
+            How the plugin should isolate conversation history.
+
+            • "channel"        → every alias & model in a channel shares one context
+            • "channel+model" → history is separate for each underlying model (default)
+            • "channel+alias" → history is separate per command alias
+            """
+        ),
+        validator=registry.String.SetValidator(
+            ["channel", "channel+model", "channel+alias"]
+        ),
+    ),
+)
 
 conf.registerChannelValue(
     OpenRouter,

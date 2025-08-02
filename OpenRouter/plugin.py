@@ -1,5 +1,5 @@
 ###
-# Copyright (c) 2023, oddluck
+# Copyright (c) 2025 Nelluk
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -31,21 +31,22 @@ from supybot import utils, plugins, ircutils, callbacks
 from supybot.commands import *  # getopts, rest, somethingWithoutSpaces, etc.
 from supybot.i18n import PluginInternationalization
 import re
+from collections import defaultdict
 from openai import OpenAI
 
 _ = PluginInternationalization("OpenRouter")
 
 
 class OpenRouter(callbacks.Plugin):
-    """Use an OpenAI‑compatible Chat Completion API via OpenRouter (or any compatible endpoint)."""
-
+	"""Use an OpenAI‑compatible Chat Completion API via OpenRouter (or any compatible endpoint)."""
     threaded = True
 
     # ---------------------------- lifecycle ---------------------------- #
 
     def __init__(self, irc):
         super().__init__(irc)
-        self.history = {}
+        # maps (channel, qualifier) → list[dict]
+        self.history = defaultdict(list)
 
     # ---------------------------- helpers ----------------------------- #
 
@@ -55,9 +56,29 @@ class OpenRouter(callbacks.Plugin):
             return opts["temp"]
         return opts.get(name, self.registryValue(name, channel))
 
+    def _history_key(self, channel, model_name, alias_name):
+        """Return the key object used to segregate chat histories."""
+        scope = self.registryValue("contextScope", channel).lower()
+        if scope == "channel":
+            return (channel, None)
+        if scope == "channel+alias":
+            return (channel, alias_name or model_name)
+        # default ⇒ channel+model
+        return (channel, model_name)
+
+    def _append_history(self, key, user_msg, assistant_msg, max_history):
+        hist = self.history[key]
+        hist.extend([
+            {"role": "user", "content": user_msg},
+            {"role": "assistant", "content": assistant_msg},
+        ])
+        # trim if needed
+        excess = max(len(hist) - max_history * 2, 0)
+        if excess:
+            del hist[:excess]
+
     # ---------------------------- command ----------------------------- #
 
-    # getopts expects option names *without* leading dashes
     _OPTSPEC = {
         "model": "somethingWithoutSpaces",
         "temperature": "float",
@@ -69,12 +90,11 @@ class OpenRouter(callbacks.Plugin):
     }
 
     @wrap([
-        getopts(_OPTSPEC),  # returns a list of (option, value) tuples
-        rest("text"),      # everything remaining is the prompt
+        getopts(_OPTSPEC),
+        rest("text"),
     ])
     def chat(self, irc, msg, args, opts, prompt):
-        """[--model <name>] [--temperature <f>] [--top_p <f>] [--max_tokens <n>]
-        [--presence_penalty <f>] [--frequency_penalty <f>] -- <prompt>
+        """[--model <name>] [--temperature <f>] … -- <prompt>
 
         Sends <prompt> to the configured API. Flags override the channel's
         defaults for this single call.
@@ -101,17 +121,20 @@ class OpenRouter(callbacks.Plugin):
             base_url=self.registryValue("base_url"),
         )
 
-        self.history.setdefault(channel, [])
-        max_history = self.registryValue("max_history", channel)
         system_prompt = self.registryValue("prompt", channel).replace(
             "$botnick", irc.nick
         )
 
         model_name = opts.get("model", self.registryValue("model", channel))
 
+        # alias name is the first token after the bot nick, e.g. in "@grok" or "@claude"
+        alias_name = msg.args[1].split()[0] if msg.args and len(msg.args) > 1 else None
+        key = self._history_key(channel, model_name, alias_name)
+        max_history = self.registryValue("max_history", channel)
+
         request_params = {
             "model": model_name,
-            "messages": self.history[channel][-max_history:] + [
+            "messages": self.history[key][-max_history:] + [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt_for_llm},
             ],
@@ -152,12 +175,10 @@ class OpenRouter(callbacks.Plugin):
         # --------------------------------------------------------------- #
         # Save conversation history
         # --------------------------------------------------------------- #
-        self.history[channel].extend([
-            {"role": "user", "content": prompt_for_llm},
-            {"role": "assistant", "content": content},
-        ])
+        self._append_history(key, prompt_for_llm, content, max_history)
 
 
 Class = OpenRouter
 
 # vim: set shiftwidth=4 softtabstop=4 expandtab textwidth=79:
+
