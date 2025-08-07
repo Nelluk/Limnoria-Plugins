@@ -65,6 +65,9 @@ class Polymarket(callbacks.Plugin):
         slug = matching_event.get('slug', '')  # Use .get() to avoid KeyError
         markets = matching_event['markets']
 
+        # Filter out inactive markets (e.g., placeholders without real pricing)
+        markets = [m for m in markets if m.get('active', True)]
+
         log.debug(f"Polymarket: Matching event found: {title}, slug: {slug}, markets: {markets}")  # Log matching event details
 
         # Parse market data
@@ -161,6 +164,11 @@ class Polymarket(callbacks.Plugin):
 
     def _parse_market_data(self, market: dict) -> list:
         """Parses data for a single market within an event."""
+        # Skip inactive markets
+        if not market.get('active', True):
+            log.debug("Polymarket: Skipping inactive market: %s", market.get('groupItemTitle', market.get('slug', 'unknown')))
+            return []
+
         outcome = market['groupItemTitle']
         log.debug(f"Polymarket: Parsing market: {outcome}")
         try:
