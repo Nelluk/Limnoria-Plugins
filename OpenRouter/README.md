@@ -6,6 +6,12 @@ A tiny Limnoria/Supybot plugin that turns your IRC bot into a front‑end for an
 
 ## Installation
 
+### PluginDownloader:
+`@plugindownloader install Nelluk OpenRouter`
+
+`@load OpenRouter`
+
+### Manual:
 1. Copy the `OpenRouter/` directory into `plugins/` and reload the bot:
 
    ```irc
@@ -25,12 +31,13 @@ A tiny Limnoria/Supybot plugin that turns your IRC bot into a front‑end for an
 ```irc
 # Required
 @config plugins.openrouter.api_key   sk‑live_your_key_here
-@config plugins.openrouter.base_url  https://openrouter.ai/api/v1
+@config plugins.openrouter.base_url  https://openrouter.ai/api/v1  # or https://api.openai.com/v1/
 
 # Common tweaks
-@config plugins.openrouter.model          gpt‑4o-mini  # default model
-@config plugins.openrouter.temperature    0.7          # sampling temperature
-@config plugins.openrouter.max_history    10           # turns kept in memory
+@config plugins.openrouter.model          deepseek/deepseek-chat-v3-0324:free  # default model
+@config plugins.openrouter.temperature    0.7                                  # sampling temperature
+@config plugins.openrouter.max_history    10                                   # turns kept in memory
+@config plugins.openrouter.max_completion_tokens 2000                          # some models require this parameter
 
 # Conversation isolation (new)
 #   channel         – one shared thread per channel
