@@ -104,10 +104,10 @@ conf.registerChannelValue(
     OpenRouter,
     "model",
     registry.String(
-        "google/gemini-2.0-flash-exp:free",
+        "deepseek/deepseek-chat-v3-0324:free",
         _(
             """
-            OpenRouter endpoint model, default: "google/gemini-2.0-flash-exp:free"
+            OpenRouter endpoint model, default: "deepseek/deepseek-chat-v3-0324:free"
             """
         ),
     ),
