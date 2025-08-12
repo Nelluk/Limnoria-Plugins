@@ -47,12 +47,16 @@ Run `@config list plugins.openrouter` to explore all options.
 
 ```irc
 @openrouter chat [--model <name>] [--temperature <f>] [--top_p <f>]
-                 [--max_tokens <n>] [--presence_penalty <f>]
+                 [--max_completion_tokens <n>] [--max_tokens <n>]
+                 [--presence_penalty <f>]
                  [--frequency_penalty <f>] -- <prompt>
 ```
 
 * Flags override the channel‑level defaults for this single call.
 * Use `--` to mark where flags end and your prompt begins.
+* Token limit precedence (only one is sent):
+  1) CLI `--max_completion_tokens` > 2) CLI `--max_tokens` >
+  3) channel `max_completion_tokens` (> 0) > 4) channel `max_tokens`.
 
 ### Example
 
@@ -74,3 +78,12 @@ If you define several aliases, set `contextScope` to `channel+model` or `channel
 
 ---
 
+## OpenAI/endpoint compatibility
+
+- The plugin now supports both `max_tokens` and `max_completion_tokens` and will
+  prefer `max_completion_tokens` when provided. This improves compatibility with
+  providers or models that require the newer parameter while remaining
+  compatible with OpenRouter and other OpenAI‑compatible chat‑completion
+  endpoints that accept `max_tokens`.
+
+---

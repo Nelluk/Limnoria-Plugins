@@ -84,6 +84,7 @@ class OpenRouter(callbacks.Plugin):
         "temperature": "float",
         "temp": "float",              # alias for convenience
         "top_p": "float",
+        "max_completion_tokens": "int",
         "max_tokens": "int",
         "presence_penalty": "float",
         "frequency_penalty": "float",
@@ -144,13 +145,22 @@ class OpenRouter(callbacks.Plugin):
         for pname in (
             "temperature",
             "top_p",
-            "max_tokens",
+            # token limit handled separately to support both names
             "presence_penalty",
             "frequency_penalty",
         ):
             if pname == "frequency_penalty" and "gemini" in model_name.lower():
                 continue
             request_params[pname] = self._get_param(opts, pname, channel)
+
+        # Choose exactly one token limit parameter, preferring max_completion_tokens
+        mct = self._get_param(opts, "max_completion_tokens", channel)
+        if isinstance(mct, int) and mct > 0:
+            request_params["max_completion_tokens"] = mct
+        else:
+            mt = self._get_param(opts, "max_tokens", channel)
+            if isinstance(mt, int) and mt > 0:
+                request_params["max_tokens"] = mt
 
         # --------------------------------------------------------------- #
         # Call the API

@@ -195,6 +195,22 @@ conf.registerChannelValue(
     ),
 )
 
+# Preferred by some newer OpenAI-compatible endpoints. If set to a value > 0,
+# the plugin will send this instead of max_tokens. Leave at 0 to fall back to
+# max_tokens.
+conf.registerChannelValue(
+    OpenRouter,
+    "max_completion_tokens",
+    registry.Integer(
+        0,
+        _(
+            """
+            Preferred alternative to max_tokens for some providers. If > 0, overrides max_tokens; if 0, max_tokens is used.
+            """
+        ),
+    ),
+)
+
 conf.registerChannelValue(
     OpenRouter,
     "presence_penalty",
