@@ -17,6 +17,33 @@ warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 class Polymarket(callbacks.Plugin):
     """Fetches and displays odds from Polymarket"""
 
+    def _as_list(self, value):
+        """Ensure API fields that may be stringified JSON arrays are parsed as lists."""
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return parsed
+            except Exception:
+                return []
+        return []
+
+    def _market_label(self, market: dict, outcomes: list) -> str:
+        """Derive a readable label for a market when groupItemTitle is missing/empty."""
+        label = market.get('groupItemTitle')
+        if label:
+            return label
+        # Fallbacks: question, Yes for binary, or first outcome/slug
+        if 'question' in market and market['question']:
+            return market['question']
+        if outcomes and set(outcomes) == {'Yes', 'No'}:
+            return 'Yes'
+        if outcomes:
+            return outcomes[0]
+        return market.get('slug', 'Market')
+
     def _parse_polymarket_event(self, query, is_url=True, max_responses=12):
         """
         Parse Polymarket event data from API response.
@@ -73,13 +100,21 @@ class Polymarket(callbacks.Plugin):
         # Parse market data
         cleaned_data = []
         for market in markets:
-            outcome = market['groupItemTitle']
+            # Normalize fields that sometimes arrive as stringified JSON
+            outcomes = self._as_list(market.get('outcomes', []))
+            outcome_prices_raw = self._as_list(market.get('outcomePrices', []))
+            # Convert prices to floats if present
+            outcome_prices = []
+            try:
+                outcome_prices = [float(p) for p in outcome_prices_raw]
+            except Exception:
+                outcome_prices = []
+
+            clob_token_ids = self._as_list(market.get('clobTokenIds', []))
+            outcome = self._market_label(market, outcomes)
+
             log.debug(f"Polymarket: Parsing market: {outcome}")  # Log the current market being parsed
             try:
-                outcomes = market['outcomes']
-                outcome_prices = market['outcomePrices']
-                clob_token_ids = market.get('clobTokenIds', [None] * len(market['outcomes']))
-
                 # Handle empty outcomePrices for Yes/No markets
                 if not outcome_prices:
                     if len(outcomes) == 2 and 'Yes' in outcomes and 'No' in outcomes:
@@ -91,11 +126,11 @@ class Polymarket(callbacks.Plugin):
                         if market.get('bestBid') is not None:
                             no_price = 1 - market['bestBid']
                         if yes_price is not None and no_price is not None:
-                            outcome_prices = [str(yes_price), str(no_price)]
+                            outcome_prices = [float(yes_price), float(no_price)]
                         elif market.get('lastTradePrice') is not None:
-                            yes_price = market['lastTradePrice']
+                            yes_price = float(market['lastTradePrice'])
                             no_price = 1 - yes_price
-                            outcome_prices = [str(yes_price), str(no_price)]
+                            outcome_prices = [yes_price, no_price]
                         else:
                             log.debug(f"Skipping market due to missing prices: {market}")
                             continue
@@ -113,17 +148,21 @@ class Polymarket(callbacks.Plugin):
                     no_probability = float(outcome_prices[no_index])
                     # Handle the edge case for Yes/No markets only if it's the only market
                     if len(markets) == 1 and yes_probability <= 0.01 and no_probability > 0.99:
-                        cleaned_data.append((outcome, yes_probability, 'Yes', clob_token_ids[yes_index]))
+                            # Ensure clob token id alignment
+                        clob_id = clob_token_ids[yes_index] if yes_index < len(clob_token_ids) else None
+                        cleaned_data.append((outcome, yes_probability, 'Yes', clob_id))
                     else:
                         probability = yes_probability
                         display_outcome = 'Yes'
-                        cleaned_data.append((outcome, probability, display_outcome, clob_token_ids[yes_index]))
+                        clob_id = clob_token_ids[yes_index] if yes_index < len(clob_token_ids) else None
+                        cleaned_data.append((outcome, probability, display_outcome, clob_id))
                 else:
                     # For multi-outcome markets, always use the highest probability
                     max_price_index = outcome_prices.index(max(outcome_prices, key=float))
                     probability = float(outcome_prices[max_price_index])
                     display_outcome = outcomes[max_price_index]
-                    cleaned_data.append((outcome, probability, display_outcome, clob_token_ids[max_price_index]))
+                    clob_id = clob_token_ids[max_price_index] if max_price_index < len(clob_token_ids) else None
+                    cleaned_data.append((outcome, probability, display_outcome, clob_id))
             except (KeyError, ValueError, json.JSONDecodeError) as e:
                 log.error(f"Polymarket: Error parsing market data: {str(e)}")  # Log parsing errors
                 continue
@@ -168,14 +207,16 @@ class Polymarket(callbacks.Plugin):
         if not market.get('active', True):
             log.debug("Polymarket: Skipping inactive market: %s", market.get('groupItemTitle', market.get('slug', 'unknown')))
             return []
-
-        outcome = market['groupItemTitle']
+        outcomes = self._as_list(market.get('outcomes', []))
+        outcome_prices_raw = self._as_list(market.get('outcomePrices', []))
+        try:
+            outcome_prices = [float(p) for p in outcome_prices_raw]
+        except Exception:
+            outcome_prices = []
+        clob_token_ids = self._as_list(market.get('clobTokenIds', []))
+        outcome = self._market_label(market, outcomes)
         log.debug(f"Polymarket: Parsing market: {outcome}")
         try:
-            outcomes = market['outcomes']
-            outcome_prices = market['outcomePrices']
-            clob_token_ids = market.get('clobTokenIds', [None] * len(market['outcomes']))
-
             log.debug(f"Polymarket: Outcomes: {outcomes}, Prices: {outcome_prices}, Token IDs: {clob_token_ids}")
 
             if len(outcomes) == 2 and 'Yes' in outcomes and 'No' in outcomes:
