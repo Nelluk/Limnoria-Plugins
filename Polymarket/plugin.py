@@ -38,7 +38,7 @@ class Polymarket(callbacks.Plugin):
             slug = query
 
         encoded_slug = quote(slug)
-        api_url = f"https://polymarket.com/api/events/global?q={encoded_slug}"
+        api_url = f"https://gamma-api.polymarket.com/public-search?q={encoded_slug}"
         
         log.debug(f"Polymarket: Fetching data from API URL: {api_url}")
         
