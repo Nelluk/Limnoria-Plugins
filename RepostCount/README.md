@@ -9,6 +9,8 @@ RepostCount is a plugin for the Limnoria IRC bot that tracks and counts reposts 
 - Tracks posted links in a specified channel
 - Detects when a link is reposted
 - Counts the number of reposts per user
+- Case-insensitive nick handling (e.g., thero == Thero)
+- Admin-configurable nick aliases to combine multiple nicks
 - Ignores query parameters in URLs from certain domains to avoid false positives
 - Automatically purges links older than 12 hours from its database
 
@@ -75,6 +77,26 @@ Example output:
 User1 has caused 10 reposts.
 User2 has not caused any reposts.
 ```
+
+### Admin: alias management
+
+Combine multiple nicks that belong to the same person. All nick matching is case-insensitive.
+
+- `@aliasadd <primary> <alias>`: Aliases `<alias>` to `<primary>` and merges repost counts into the primary group.
+- `@aliasrm <alias>`: Removes an alias mapping. Counts remain with the primary.
+- `@aliases`: Lists current alias mappings.
+
+Examples:
+```
+@aliasadd thero Thero_mobile
+@aliasadd thero thero_alt
+@aliases
+@aliasrm thero_alt
+```
+
+Notes:
+- Aliases and nick comparisons are case-insensitive.
+- Removing an alias does not split previously merged counts.
 
 ## License
 
