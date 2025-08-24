@@ -1,5 +1,22 @@
+"""
+Polymarket plugin
+
+Implementation notes and gotchas:
+
+- Avoid wildcard imports from supybot.commands. They define names like `any` that
+  shadow Python builtins. Use explicit imports (e.g., `from supybot.commands import wrap`).
+- Search flow uses the optimized public-search endpoint first and falls back to
+  the plain endpoint if no events are returned. Optimized results sometimes omit
+  fields such as `clobTokenIds`; `_ensure_clob_ids` enriches them via detail endpoints.
+- Markets can present missing or stringified arrays. `_as_list` normalizes these,
+  and pricing falls back to `bestAsk`/`bestBid`/`lastTradePrice` for Yes/No markets.
+- URL shortening is optional. `_shorten_url` tries TinyURL with fallbacks; it logs
+  and returns the full URL when shortening is unavailable.
+"""
+
 import supybot.utils as utils
-from supybot.commands import *
+# Avoid wildcard import: it can shadow Python builtins like `any`/`all`.
+from supybot.commands import wrap
 import supybot.plugins as plugins
 import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
@@ -106,7 +123,7 @@ class Polymarket(callbacks.Plugin):
                 (
                     e
                     for e in events
-                    if builtins.any(m.get('active', True) and not m.get('closed', False) for m in e.get('markets', []))
+                    if any(m.get('active', True) and not m.get('closed', False) for m in e.get('markets', []))
                 ),
                 (events[0] if events else None),
             )
@@ -278,6 +295,46 @@ class Polymarket(callbacks.Plugin):
             log.debug(f"Polymarket: _ensure_clob_ids failed: {e}")
         return markets
 
+    def _shorten_url(self, market_url: str) -> str:
+        """Attempts to shorten a URL with multiple providers and broad compatibility.
+
+        Tries TinyURL first (Polymarket links are long), then falls back to
+        is.gd and da.gd. Returns the original URL on any failure.
+        """
+        try:
+            try:
+                # Some pyshorteners versions accept timeout; others don't.
+                shortener = pyshorteners.Shortener(timeout=5)
+            except TypeError:
+                shortener = pyshorteners.Shortener()
+
+            # Preferred provider: TinyURL
+            try:
+                short_url = shortener.tinyurl.short(market_url)
+                log.debug(f"Polymarket: URL shortened via TinyURL -> {short_url}")
+                return short_url
+            except Exception as e:
+                log.debug(f"Polymarket: TinyURL failed -> {e!r}")
+
+            # Fallback: is.gd
+            try:
+                short_url = shortener.isgd.short(market_url)
+                log.debug(f"Polymarket: URL shortened via is.gd -> {short_url}")
+                return short_url
+            except Exception as e:
+                log.debug(f"Polymarket: is.gd failed -> {e!r}")
+
+            # Fallback: da.gd
+            try:
+                short_url = shortener.dagd.short(market_url)
+                log.debug(f"Polymarket: URL shortened via da.gd -> {short_url}")
+                return short_url
+            except Exception as e:
+                log.debug(f"Polymarket: da.gd failed -> {e!r}")
+        except Exception as e:
+            log.debug(f"Polymarket: URL shortener setup failed -> {e!r}")
+        return market_url
+
     def _get_price_change(self, clob_token_id, current_price):
         """Fetches and calculates the 24-hour price change for a given clob_token_id."""
         if not clob_token_id:
@@ -394,15 +451,11 @@ class Polymarket(callbacks.Plugin):
                     market_url = f"https://polymarket.com/event/{slug}" if slug else "https://polymarket.com"
                 log.debug(f"Polymarket: market_url={market_url}")
                 
-                # Try to shorten URL, fall back to full URL on any error (broad catch for compatibility)
-                try:
-                    # Some environments have older pyshorteners without 'timeout' kwarg or different exceptions
-                    shortener = pyshorteners.Shortener()
-                    short_url = shortener.tinyurl.short(market_url)
-                    output += f" | {short_url}"
-                except Exception as e:
-                    log.warning(f"URL shortening failed; using full URL. Reason: {e!r}")
-                    output += f" | {market_url}"
+                # Try to shorten URL (TinyURL with fallbacks); append full URL if it fails
+                short_url = self._shorten_url(market_url)
+                if short_url == market_url:
+                    log.warning("Polymarket: URL shortening unavailable; using full URL.")
+                output += f" | {short_url}"
                 
                 log.debug(f"Polymarket: Sending IRC reply: {output}")
                 
