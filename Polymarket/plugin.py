@@ -5,6 +5,7 @@ import supybot.ircutils as ircutils
 import supybot.callbacks as callbacks
 import supybot.log as log
 import requests
+import builtins
 import json
 from urllib.parse import urlparse, quote
 import warnings
@@ -105,7 +106,7 @@ class Polymarket(callbacks.Plugin):
                 (
                     e
                     for e in events
-                    if any(m.get('active', True) and not m.get('closed', False) for m in e.get('markets', []))
+                    if builtins.any(m.get('active', True) and not m.get('closed', False) for m in e.get('markets', []))
                 ),
                 (events[0] if events else None),
             )
