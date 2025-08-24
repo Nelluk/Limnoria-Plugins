@@ -198,7 +198,7 @@ class Polymarket(callbacks.Plugin):
                     display_outcome = outcomes[max_price_index]
                     clob_id = clob_token_ids[max_price_index] if max_price_index < len(clob_token_ids) else None
                     cleaned_data.append((outcome, probability, display_outcome, clob_id))
-            except (KeyError, ValueError, json.JSONDecodeError) as e:
+            except (KeyError, ValueError, TypeError, IndexError, json.JSONDecodeError) as e:
                 log.error(f"Polymarket: Error parsing market data: {str(e)}")  # Log parsing errors
                 continue
 
@@ -378,13 +378,14 @@ class Polymarket(callbacks.Plugin):
                     slug = result.get('slug', '')
                     market_url = f"https://polymarket.com/event/{slug}" if slug else "https://polymarket.com"
                 
-                # Try to shorten URL, fall back to full URL if there's an error
+                # Try to shorten URL, fall back to full URL on any error (broad catch for compatibility)
                 try:
-                    shortener = pyshorteners.Shortener(timeout=5)  # Increase timeout to 5 seconds
+                    # Some environments have older pyshorteners without 'timeout' kwarg or different exceptions
+                    shortener = pyshorteners.Shortener()
                     short_url = shortener.tinyurl.short(market_url)
                     output += f" | {short_url}"
-                except (Timeout, ConnectionError, pyshorteners.exceptions.ShorteningErrorException) as e:
-                    log.warning(f"URL shortening failed: {str(e)}. Using full URL.")
+                except Exception as e:
+                    log.warning(f"URL shortening failed; using full URL. Reason: {e!r}")
                     output += f" | {market_url}"
                 
                 log.debug(f"Polymarket: Sending IRC reply: {output}")
