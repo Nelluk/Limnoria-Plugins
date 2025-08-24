@@ -65,7 +65,14 @@ class Polymarket(callbacks.Plugin):
             slug = query
 
         encoded_slug = quote(slug)
-        api_url = f"https://gamma-api.polymarket.com/public-search?q={encoded_slug}"
+        # Choose search endpoint. Use optimized for keyword searches to mirror site behavior.
+        if is_url:
+            api_url = f"https://gamma-api.polymarket.com/public-search?q={encoded_slug}"
+        else:
+            api_url = (
+                "https://gamma-api.polymarket.com/public-search?q="
+                f"{encoded_slug}&optimized=true&limit_per_type=1&type=events&search_tags=true&search_profiles=true&cache=true"
+            )
         
         log.debug(f"Polymarket: Fetching data from API URL: {api_url}")
         
@@ -73,6 +80,14 @@ class Polymarket(callbacks.Plugin):
         response = requests.get(api_url, verify=False)
         response.raise_for_status()
         data = response.json()
+
+        # Fallback to non-optimized endpoint if optimized yields no events
+        if (not data or 'events' not in data or not data['events']) and not is_url:
+            fallback_url = f"https://gamma-api.polymarket.com/public-search?q={encoded_slug}"
+            log.debug(f"Polymarket: Optimized search empty, falling back to: {fallback_url}")
+            response = requests.get(fallback_url, verify=False)
+            response.raise_for_status()
+            data = response.json()
 
         log.debug(f"Polymarket: API response data: {data}")  # Log the raw API response
 
@@ -83,17 +98,37 @@ class Polymarket(callbacks.Plugin):
         if is_url:
             matching_event = next((event for event in data['events'] if event['slug'] == slug.replace(' ', '-')), None)
         else:
-            matching_event = data['events'][0] if data['events'] else None
+            # Prefer the first event that has at least one active and unclosed market.
+            # If none, fall back to the top event from the API response.
+            events = data.get('events', [])
+            matching_event = next(
+                (
+                    e
+                    for e in events
+                    if any(m.get('active', True) and not m.get('closed', False) for m in e.get('markets', []))
+                ),
+                (events[0] if events else None),
+            )
 
         if not matching_event:
             return {'title': "No matching event found", 'data': [], 'slug': ''}
 
         title = matching_event['title']
         slug = matching_event.get('slug', '')  # Use .get() to avoid KeyError
-        markets = matching_event['markets']
+        markets = matching_event.get('markets', [])
 
-        # Filter out inactive markets (e.g., placeholders without real pricing)
-        markets = [m for m in markets if m.get('active', True)]
+        # Filter out inactive or closed markets (e.g., placeholders without real pricing)
+        filtered_markets = [m for m in markets if m.get('active', True) and not m.get('closed', False)]
+
+        # Fallback: if no active and unclosed markets, use the top market from the API response
+        if filtered_markets:
+            markets = filtered_markets
+        else:
+            log.debug("Polymarket: No active/unclosed markets; falling back to top market from API response")
+            markets = markets[:1]
+
+        # If optimized search omitted clobTokenIds, try to enrich from detailed endpoints
+        markets = self._ensure_clob_ids(slug, markets)
 
         log.debug(f"Polymarket: Matching event found: {title}, slug: {slug}, markets: {markets}")  # Log matching event details
 
@@ -180,8 +215,72 @@ class Polymarket(callbacks.Plugin):
         
         return result
 
+    def _ensure_clob_ids(self, event_slug: str, markets: list) -> list:
+        """Ensure markets include clobTokenIds by fetching enriched data when available.
+
+        Tries event-by-slug endpoint first, then per-market by slug.
+        Swallows errors and returns markets unchanged on failure.
+        """
+        try:
+            # Quick check: if at least one market already has clobTokenIds, we still try to fill the rest.
+            need_fill = [m for m in markets if not self._as_list(m.get('clobTokenIds', []))]
+            if not need_fill:
+                return markets
+
+            # Attempt: fetch event details by slug
+            if event_slug:
+                evt_url = f"https://gamma-api.polymarket.com/events?slug={quote(event_slug)}"
+                log.debug(f"Polymarket: Enriching markets via event endpoint: {evt_url}")
+                r = requests.get(evt_url, verify=False)
+                if r.ok:
+                    evt = r.json()
+                    # Response might be {"events": [...]} or a single event dict
+                    evt_obj = None
+                    if isinstance(evt, dict) and 'events' in evt and evt['events']:
+                        evt_obj = evt['events'][0]
+                    elif isinstance(evt, dict) and 'markets' in evt:
+                        evt_obj = evt
+                    if evt_obj and 'markets' in evt_obj:
+                        by_slug = {em.get('slug'): em for em in evt_obj['markets']}
+                        for m in markets:
+                            if not self._as_list(m.get('clobTokenIds', [])):
+                                em = by_slug.get(m.get('slug'))
+                                if em and self._as_list(em.get('clobTokenIds', [])):
+                                    m['clobTokenIds'] = em.get('clobTokenIds')
+
+            # Per-market enrichment for any still missing
+            for m in markets:
+                if self._as_list(m.get('clobTokenIds', [])):
+                    continue
+                mslug = m.get('slug')
+                if not mslug:
+                    continue
+                m_url = f"https://gamma-api.polymarket.com/markets?slug={quote(mslug)}"
+                log.debug(f"Polymarket: Enriching market via market endpoint: {m_url}")
+                try:
+                    rr = requests.get(m_url, verify=False)
+                    if not rr.ok:
+                        continue
+                    mj = rr.json()
+                    candidate = None
+                    if isinstance(mj, dict) and 'markets' in mj and mj['markets']:
+                        candidate = mj['markets'][0]
+                    elif isinstance(mj, list) and mj:
+                        candidate = mj[0]
+                    elif isinstance(mj, dict) and 'clobTokenIds' in mj:
+                        candidate = mj
+                    if candidate and self._as_list(candidate.get('clobTokenIds', [])):
+                        m['clobTokenIds'] = candidate.get('clobTokenIds')
+                except Exception:
+                    continue
+        except Exception as e:
+            log.debug(f"Polymarket: _ensure_clob_ids failed: {e}")
+        return markets
+
     def _get_price_change(self, clob_token_id, current_price):
         """Fetches and calculates the 24-hour price change for a given clob_token_id."""
+        if not clob_token_id:
+            return None
         api_url = f"https://clob.polymarket.com/prices-history?interval=1d&market={clob_token_id}&fidelity=1"
         try:
             response = requests.get(api_url, verify=False)
@@ -203,9 +302,12 @@ class Polymarket(callbacks.Plugin):
 
     def _parse_market_data(self, market: dict) -> list:
         """Parses data for a single market within an event."""
-        # Skip inactive markets
-        if not market.get('active', True):
-            log.debug("Polymarket: Skipping inactive market: %s", market.get('groupItemTitle', market.get('slug', 'unknown')))
+        # Skip inactive or closed markets
+        if not market.get('active', True) or market.get('closed', False):
+            log.debug(
+                "Polymarket: Skipping inactive/closed market: %s",
+                market.get('groupItemTitle', market.get('slug', 'unknown')),
+            )
             return []
         outcomes = self._as_list(market.get('outcomes', []))
         outcome_prices_raw = self._as_list(market.get('outcomePrices', []))
@@ -263,7 +365,7 @@ class Polymarket(callbacks.Plugin):
                 # Format output
                 output = f"\x02{result['title']}\x02: "
                 for outcome, probability, display_outcome, clob_token_id in filtered_data:
-                    price_change = self._get_price_change(clob_token_id, probability)
+                    price_change = self._get_price_change(clob_token_id, probability) if clob_token_id else None
                     change_str = f" ({'⬆️' if price_change > 0 else '🔻'}{abs(price_change)*100:.1f}%)" if price_change is not None and price_change != 0 else ""
                     output += f"{outcome}: \x02{probability:.0%}{change_str}{' (' + display_outcome + ')' if display_outcome != 'Yes' else ''}\x02 | "
                 
@@ -339,7 +441,7 @@ class Polymarket(callbacks.Plugin):
                 elif outcome == "Democrat":
                     outcome = "\x0312Dem\x03"  # Color Blue
                 
-                price_change = self._get_price_change(clob_token_id, probability)
+                price_change = self._get_price_change(clob_token_id, probability) if clob_token_id else None
                 change_str = f" ({'⬆️' if price_change > 0 else '🔻'}{abs(price_change)*100:.1f}%)" if price_change is not None and price_change != 0 else ""
                 combined_results.append(f"{filtered_title}: {outcome}: \x02{probability:.0%}{change_str}{' (' + display_outcome + ')' if display_outcome != 'Yes' else ''}\x02")
             else:
