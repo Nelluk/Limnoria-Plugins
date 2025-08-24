@@ -123,7 +123,11 @@ class Polymarket(callbacks.Plugin):
                 (
                     e
                     for e in events
-                    if any(m.get('active', True) and not m.get('closed', False) for m in e.get('markets', []))
+                    # Use builtins.any to avoid shadowing by supybot.commands.any
+                    if builtins.any(
+                        m.get('active', True) and not m.get('closed', False)
+                        for m in e.get('markets', [])
+                    )
                 ),
                 (events[0] if events else None),
             )
