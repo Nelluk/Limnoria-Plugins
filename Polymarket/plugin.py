@@ -359,15 +359,29 @@ class Polymarket(callbacks.Plugin):
         try:
             is_url = query.startswith('http://') or query.startswith('https://')
             result = self._parse_polymarket_event(query, is_url=is_url)
+            log.debug(
+                f"Polymarket: result summary -> title={result.get('title')}, slug={result.get('slug')}, count={len(result.get('data', []))}"
+            )
             if result['data']:
                 filtered_data = result['data'][:20]
+                log.debug(f"Polymarket: formatting {len(filtered_data)} items")
                 
                 # Format output
                 output = f"\x02{result['title']}\x02: "
-                for outcome, probability, display_outcome, clob_token_id in filtered_data:
-                    price_change = self._get_price_change(clob_token_id, probability) if clob_token_id else None
-                    change_str = f" ({'⬆️' if price_change > 0 else '🔻'}{abs(price_change)*100:.1f}%)" if price_change is not None and price_change != 0 else ""
-                    output += f"{outcome}: \x02{probability:.0%}{change_str}{' (' + display_outcome + ')' if display_outcome != 'Yes' else ''}\x02 | "
+                for item in filtered_data:
+                    try:
+                        outcome, probability, display_outcome, clob_token_id = item
+                        log.debug(f"Polymarket: item -> outcome={outcome}, prob={probability}, clob={clob_token_id}")
+                        price_change = self._get_price_change(clob_token_id, probability) if clob_token_id else None
+                        change_str = (
+                            f" ({'⬆️' if price_change > 0 else '🔻'}{abs(price_change)*100:.1f}%)"
+                            if price_change is not None and price_change != 0
+                            else ""
+                        )
+                        output += f"{outcome}: \x02{probability:.0%}{change_str}{' (' + display_outcome + ')' if display_outcome != 'Yes' else ''}\x02 | "
+                    except Exception as e:
+                        log.exception(f"Polymarket: formatting error for item {item!r}: {e!r}")
+                        continue
                 
                 output = output.rstrip(' | ')
                 
@@ -377,6 +391,7 @@ class Polymarket(callbacks.Plugin):
                 else:
                     slug = result.get('slug', '')
                     market_url = f"https://polymarket.com/event/{slug}" if slug else "https://polymarket.com"
+                log.debug(f"Polymarket: market_url={market_url}")
                 
                 # Try to shorten URL, fall back to full URL on any error (broad catch for compatibility)
                 try:
@@ -398,7 +413,8 @@ class Polymarket(callbacks.Plugin):
         except json.JSONDecodeError:
             irc.reply("Error parsing data from Polymarket. The API response may be invalid.")
         except Exception as e:
-            log.error(f"Polymarket plugin error: {str(e)}")
+            # Include full stack trace to aid debugging in production logs
+            log.exception(f"Polymarket plugin error: {e!r}")
             irc.reply("An unexpected error occurred. Please try again later.")
 
     polymarket = wrap(polymarket, ['text'])
