@@ -33,6 +33,7 @@ from supybot.i18n import PluginInternationalization
 import re
 from collections import defaultdict
 from openai import OpenAI
+import json
 
 _ = PluginInternationalization("OpenRouter")
 
@@ -163,9 +164,55 @@ class OpenRouter(callbacks.Plugin):
                 request_params["max_tokens"] = mt
 
         # --------------------------------------------------------------- #
+        # Log exact request payload (always on)
+        # --------------------------------------------------------------- #
+        try:
+            scope = self.registryValue("contextScope", channel)
+            history_count = len(self.history[key][-max_history:])
+            debug_blob = json.dumps(request_params, ensure_ascii=False)
+            self.log.info(
+                "OpenRouter request → base_url=%s model=%s scope=%s key=%r history_used=%d payload=%s",
+                self.registryValue("base_url"),
+                model_name,
+                scope,
+                key,
+                history_count,
+                debug_blob,
+            )
+        except Exception as e:
+            # Fallback to repr if JSON serialization fails for any reason
+            self.log.info(
+                "OpenRouter request (repr fallback due to %s): %r",
+                e,
+                request_params,
+            )
+
+        # --------------------------------------------------------------- #
         # Call the API
         # --------------------------------------------------------------- #
         completion = client.chat.completions.create(**request_params)
+        # Log response metadata
+        try:
+            finish_reason = None
+            if completion.choices and len(completion.choices) > 0:
+                finish_reason = getattr(completion.choices[0], "finish_reason", None)
+            usage = getattr(completion, "usage", None)
+            usage_tuple = (
+                getattr(usage, "prompt_tokens", None) if usage else None,
+                getattr(usage, "completion_tokens", None) if usage else None,
+                getattr(usage, "total_tokens", None) if usage else None,
+            )
+            self.log.info(
+                "OpenRouter response ← id=%s model=%s finish=%s tokens=%s created=%s",
+                getattr(completion, "id", None),
+                getattr(completion, "model", None),
+                finish_reason,
+                usage_tuple,
+                getattr(completion, "created", None),
+            )
+        except Exception as e:
+            self.log.info("OpenRouter response (metadata logging failed): %s", e)
+
         content = completion.choices[0].message.content
 
         if self.registryValue("nick_strip", channel):
