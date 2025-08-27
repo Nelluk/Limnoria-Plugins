@@ -168,23 +168,19 @@ class OpenRouter(callbacks.Plugin):
         # --------------------------------------------------------------- #
         try:
             scope = self.registryValue("contextScope", channel)
-            history_count = len(self.history[key][-max_history:])
-            debug_blob = json.dumps(request_params, ensure_ascii=False)
+            history_slice = self.history[key][-max_history:]
+            history_count = len(history_slice)
+            payload_json = json.dumps(request_params, ensure_ascii=False, separators=(",", ":"))
             self.log.info(
-                "OpenRouter request → base_url=%s model=%s scope=%s key=%r history_used=%d payload=%s",
-                self.registryValue("base_url"),
-                model_name,
-                scope,
-                key,
-                history_count,
-                debug_blob,
+                f"OpenRouter request → base_url={self.registryValue('base_url')} "
+                f"model={model_name} scope={scope} key={key!r} "
+                f"history_used={history_count} messages_total={len(request_params.get('messages', []))} "
+                f"payload={payload_json}"
             )
         except Exception as e:
             # Fallback to repr if JSON serialization fails for any reason
             self.log.info(
-                "OpenRouter request (repr fallback due to %s): %r",
-                e,
-                request_params,
+                f"OpenRouter request (repr fallback due to {e}): {request_params!r}"
             )
 
         # --------------------------------------------------------------- #
@@ -194,24 +190,21 @@ class OpenRouter(callbacks.Plugin):
         # Log response metadata
         try:
             finish_reason = None
-            if completion.choices and len(completion.choices) > 0:
-                finish_reason = getattr(completion.choices[0], "finish_reason", None)
+            if getattr(completion, "choices", None):
+                choice0 = completion.choices[0]
+                finish_reason = getattr(choice0, "finish_reason", None)
             usage = getattr(completion, "usage", None)
-            usage_tuple = (
-                getattr(usage, "prompt_tokens", None) if usage else None,
-                getattr(usage, "completion_tokens", None) if usage else None,
-                getattr(usage, "total_tokens", None) if usage else None,
-            )
+            prompt_toks = getattr(usage, "prompt_tokens", None) if usage else None
+            completion_toks = getattr(usage, "completion_tokens", None) if usage else None
+            total_toks = getattr(usage, "total_tokens", None) if usage else None
             self.log.info(
-                "OpenRouter response ← id=%s model=%s finish=%s tokens=%s created=%s",
-                getattr(completion, "id", None),
-                getattr(completion, "model", None),
-                finish_reason,
-                usage_tuple,
-                getattr(completion, "created", None),
+                f"OpenRouter response ← id={getattr(completion, 'id', None)} "
+                f"model={getattr(completion, 'model', None)} finish={finish_reason} "
+                f"tokens=({prompt_toks}, {completion_toks}, {total_toks}) "
+                f"created={getattr(completion, 'created', None)}"
             )
         except Exception as e:
-            self.log.info("OpenRouter response (metadata logging failed): %s", e)
+            self.log.info(f"OpenRouter response (metadata logging failed): {e}")
 
         content = completion.choices[0].message.content
 
