@@ -129,6 +129,16 @@ class OpenRouter(callbacks.Plugin):
 
         model_name = opts.get("model", self.registryValue("model", channel))
 
+        # Disallow blacklisted models
+        try:
+            blacklist = {m.lower() for m in (self.registryValue("models_blacklist") or [])}
+        except Exception:
+            blacklist = set()
+        if isinstance(model_name, str) and model_name.lower() in blacklist:
+            irc.error(
+                f"Model '{model_name}' is disallowed by configuration. Choose a different model.")
+            return
+
         # alias name is the first token after the bot nick, e.g. in "@grok" or "@claude"
         alias_name = msg.args[1].split()[0] if msg.args and len(msg.args) > 1 else None
         key = self._history_key(channel, model_name, alias_name)

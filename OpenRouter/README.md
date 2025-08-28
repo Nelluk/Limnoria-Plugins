@@ -90,7 +90,24 @@ If you define several aliases, set `contextScope` to `channel+model` or `channel
 - The plugin now supports both `max_tokens` and `max_completion_tokens` and will
   prefer `max_completion_tokens` when provided. This improves compatibility with
   providers or models that require the newer parameter while remaining
-  compatible with OpenRouter and other OpenAI‑compatible chat‑completion
-  endpoints that accept `max_tokens`.
+compatible with OpenRouter and other OpenAI‑compatible chat‑completion
+endpoints that accept `max_tokens`.
 
 ---
+
+## Model restrictions (blacklist)
+
+Admins can block specific models globally. By default, `openai/o1-pro` is
+blocked. Any attempt to chat with a blacklisted model returns an error and the
+request is not sent to the API.
+
+```irc
+# View the blacklist (space‑separated, case‑insensitive)
+@config get plugins.openrouter.models_blacklist
+
+# Set or extend the blacklist
+@config set plugins.openrouter.models_blacklist "openai/o1-pro another/model-id"
+
+# Example: this will error and not call the API
+@openrouter chat --model openai/o1-pro -- hello
+```

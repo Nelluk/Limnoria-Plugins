@@ -87,6 +87,20 @@ conf.registerGlobalValue(
     ),
 )
 
+# Models that are not allowed to be used. Space-separated list of
+# model identifiers. Any chat attempt using a blacklisted model will
+# return an error message rather than calling the API.
+conf.registerGlobalValue(
+    OpenRouter,
+    "models_blacklist",
+    registry.SpaceSeparatedListOfStrings(
+        ["openai/o1-pro"],
+        _(
+            "Space-separated list of disallowed model ids (e.g., 'openai/o1-pro')."
+        ),
+    ),
+)
+
 conf.registerChannelValue(
     OpenRouter,
     "prompt",
