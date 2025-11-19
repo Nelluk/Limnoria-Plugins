@@ -32,6 +32,7 @@ A tiny Limnoria/Supybot plugin that turns your IRC bot into a front‑end for an
 # Required
 @config plugins.openrouter.api_key   sk‑live_your_key_here
 @config plugins.openrouter.base_url  https://openrouter.ai/api/v1  # or https://api.openai.com/v1/
+@config plugins.openrouter.prompt  You are an IRC bot. Be concise, helpful, and accurate.
 
 # Common tweaks
 @config plugins.openrouter.model          deepseek/deepseek-chat-v3-0324:free  # default model
