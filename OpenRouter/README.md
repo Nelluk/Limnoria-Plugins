@@ -40,6 +40,16 @@ A tiny Limnoria/Supybot plugin that turns your IRC bot into a front‑end for an
 @config plugins.openrouter.max_history    10                                   # turns kept in memory
 @config plugins.openrouter.max_completion_tokens 2000                          # some models require this parameter
 
+# Web search (new)
+#   web_mode: off | auto | always | optin
+#   web_engine: auto | native | exa
+#   web_search_context_size: low | medium | high
+@config plugins.openrouter.web_mode auto
+@config plugins.openrouter.web_engine auto
+@config plugins.openrouter.web_search_context_size medium
+@config plugins.openrouter.web_max_results 5
+@config plugins.openrouter.web_show_sources False
+
 # Conversation isolation (new)
 #   channel         – one shared thread per channel
 #   channel+model   – separate thread per model (default)
@@ -71,6 +81,37 @@ Run `@config list plugins.openrouter` to explore all options.
 ```irc
 @openrouter chat --model x‑ai/grok‑2‑1212 --temp 0.3 -- Summarise today in haiku
 ```
+
+### Web search usage (new)
+
+Auto mode runs search when the prompt looks time‑sensitive (e.g. “latest”,
+“today”, “price”, “weather”, or a YYYY‑MM‑DD date). You can also force it
+per message:
+
+```irc
+# Force search for a single prompt
+@openrouter chat --web -- What’s the latest Nvidia driver?
+
+# Force no search for a single prompt
+@openrouter chat --no-web -- Explain recursion
+```
+
+Search engines:
+
+```irc
+@config plugins.openrouter.web_engine auto
+@config plugins.openrouter.web_engine native
+@config plugins.openrouter.web_engine exa
+```
+
+Show sources (appends a “Sources:” line to replies):
+
+```irc
+@config plugins.openrouter.web_show_sources True
+```
+
+Current date is always injected into the system prompt to reduce stale‑date
+responses. No config required.
 
 ---
 

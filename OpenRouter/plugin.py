@@ -32,6 +32,7 @@ from supybot.commands import *  # getopts, rest, somethingWithoutSpaces, etc.
 from supybot.i18n import PluginInternationalization
 import re
 from collections import defaultdict
+from datetime import date
 from openai import OpenAI
 import json
 
@@ -78,6 +79,35 @@ class OpenRouter(callbacks.Plugin):
         if excess:
             del hist[:excess]
 
+    def _is_time_sensitive(self, text):
+        if not text:
+            return False
+        lowered = text.lower()
+        keywords = [
+            "latest",
+            "today",
+            "yesterday",
+            "tomorrow",
+            "this week",
+            "current",
+            "breaking",
+            "news",
+            "price",
+            "stock",
+            "weather",
+            "score",
+            "release",
+            "ceo",
+            "as of",
+            "right now",
+        ]
+        if any(k in lowered for k in keywords):
+            return True
+        # YYYY-MM-DD
+        if re.search(r"\b\d{4}-\d{2}-\d{2}\b", lowered):
+            return True
+        return False
+
     # ---------------------------- command ----------------------------- #
 
     _OPTSPEC = {
@@ -89,6 +119,8 @@ class OpenRouter(callbacks.Plugin):
         "max_tokens": "int",
         "presence_penalty": "float",
         "frequency_penalty": "float",
+        "web": "",
+        "no-web": "",
     }
 
     @wrap([
@@ -126,6 +158,7 @@ class OpenRouter(callbacks.Plugin):
         system_prompt = self.registryValue("prompt", channel).replace(
             "$botnick", irc.nick
         )
+        system_prompt = f"Current date: {date.today().isoformat()}\n{system_prompt}"
 
         model_name = opts.get("model", self.registryValue("model", channel))
 
@@ -174,6 +207,48 @@ class OpenRouter(callbacks.Plugin):
                 request_params["max_tokens"] = mt
 
         # --------------------------------------------------------------- #
+        # Web search plugin options
+        # --------------------------------------------------------------- #
+        web_mode = str(self.registryValue("web_mode", channel)).lower()
+        web_force_on = "web" in opts
+        web_force_off = "no-web" in opts
+        if web_force_off:
+            use_web = False
+        elif web_mode == "off":
+            use_web = False
+        elif web_mode == "always":
+            use_web = True
+        elif web_mode == "optin":
+            use_web = web_force_on
+        else:
+            use_web = web_force_on or self._is_time_sensitive(prompt)
+
+        web_search_options = None
+        if use_web:
+            engine = str(self.registryValue("web_engine", channel)).lower()
+            search_context_size = str(
+                self.registryValue("web_search_context_size", channel)
+            ).lower()
+            try:
+                max_results = int(self.registryValue("web_max_results", channel))
+            except Exception:
+                max_results = 5
+            if max_results < 1:
+                max_results = 1
+            if max_results > 10:
+                max_results = 10
+
+            web_search_options = {
+                "search_context_size": search_context_size,
+                "max_results": max_results,
+            }
+            if engine in ("native", "exa"):
+                web_search_options["engine"] = engine
+
+            request_params["plugins"] = [{"id": "web"}]
+            request_params["web_search_options"] = web_search_options
+
+        # --------------------------------------------------------------- #
         # Log exact request payload (always on)
         # --------------------------------------------------------------- #
         try:
@@ -185,6 +260,8 @@ class OpenRouter(callbacks.Plugin):
                 f"OpenRouter request → base_url={self.registryValue('base_url')} "
                 f"model={model_name} scope={scope} key={key!r} "
                 f"history_used={history_count} messages_total={len(request_params.get('messages', []))} "
+                f"use_web={use_web} web_mode={web_mode} "
+                f"web_search_options={web_search_options if use_web else 'omitted'} "
                 f"payload={payload_json}"
             )
         except Exception as e:
@@ -216,7 +293,33 @@ class OpenRouter(callbacks.Plugin):
         except Exception as e:
             self.log.info(f"OpenRouter response (metadata logging failed): {e}")
 
-        content = completion.choices[0].message.content
+        choice0 = completion.choices[0]
+        message0 = choice0.message
+        content = message0.content
+        # Log any annotations (sources) if present
+        try:
+            annotations = getattr(message0, "annotations", None)
+            if annotations:
+                self.log.info(
+                    f"OpenRouter annotations: {json.dumps(annotations, ensure_ascii=False)}"
+                )
+        except Exception as e:
+            self.log.info(f"OpenRouter annotations logging failed: {e}")
+            annotations = None
+
+        # Optionally append sources
+        try:
+            if self.registryValue("web_show_sources", channel) and annotations:
+                urls = []
+                for ann in annotations:
+                    if isinstance(ann, dict):
+                        url = ann.get("url") or ann.get("source") or ann.get("link")
+                        if url:
+                            urls.append(url)
+                if urls:
+                    content = f"{content}\nSources: " + " ".join(urls)
+        except Exception as e:
+            self.log.info(f"OpenRouter source append failed: {e}")
 
         if self.registryValue("nick_strip", channel):
             content = re.sub(rf"^{re.escape(irc.nick)}: ?", "", content)

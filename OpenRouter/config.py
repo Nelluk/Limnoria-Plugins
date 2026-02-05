@@ -127,6 +127,71 @@ conf.registerChannelValue(
     ),
 )
 
+conf.registerChannelValue(
+    OpenRouter,
+    "web_mode",
+    registry.String(
+        "auto",
+        _(
+            """
+            Web search mode: off, auto, always, or optin.
+            """
+        ),
+    ),
+)
+
+conf.registerChannelValue(
+    OpenRouter,
+    "web_engine",
+    registry.String(
+        "auto",
+        _(
+            """
+            Web search engine: auto, native, or exa.
+            """
+        ),
+    ),
+)
+
+conf.registerChannelValue(
+    OpenRouter,
+    "web_search_context_size",
+    registry.String(
+        "medium",
+        _(
+            """
+            Web search context size: low, medium, or high.
+            """
+        ),
+    ),
+)
+
+conf.registerChannelValue(
+    OpenRouter,
+    "web_max_results",
+    registry.Integer(
+        5,
+        _(
+            """
+            Maximum web search results to include (1-10).
+            """
+        ),
+    ),
+)
+
+conf.registerChannelValue(
+    OpenRouter,
+    "web_show_sources",
+    registry.Boolean(
+        False,
+        _(
+            """
+            Show web sources in replies. If False, sources are only logged.
+            """
+        ),
+    ),
+)
+
 """
 How the plugin should isolate conversation history.
 
