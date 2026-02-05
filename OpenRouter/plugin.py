@@ -108,6 +108,25 @@ class OpenRouter(callbacks.Plugin):
             return True
         return False
 
+    def _strip_urls_and_citations(self, text):
+        if not text:
+            return text
+        # Replace markdown links with their label, unless the label is itself a URL-like token.
+        def _md_link_repl(match):
+            label = match.group(1).strip()
+            # If label looks like a URL/domain, drop it to avoid citation spam.
+            if re.match(r"^[\w.-]+\.[a-z]{2,}$", label.lower()):
+                return ""
+            return label
+
+        text = re.sub(r"\[([^\]]+)\]\((https?://[^)]+)\)", _md_link_repl, text)
+        # Remove bare URLs
+        text = re.sub(r"https?://\S+", "", text)
+        # Collapse leftover double spaces/newlines
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r"\s+\n", "\n", text)
+        return text.strip()
+
     # ---------------------------- command ----------------------------- #
 
     _OPTSPEC = {
@@ -325,6 +344,14 @@ class OpenRouter(callbacks.Plugin):
                     content = f"{content}\nSources: " + " ".join(urls)
         except Exception as e:
             self.log.info(f"OpenRouter source append failed: {e}")
+
+        # If web sources are hidden, strip URLs/markdown citations.
+        try:
+            if use_web and not self.registryValue("web_show_sources", channel):
+                content = self._strip_urls_and_citations(content)
+        except Exception as e:
+            self.log.info(f"OpenRouter citation stripping failed: {e}")
+
 
         if self.registryValue("nick_strip", channel):
             content = re.sub(rf"^{re.escape(irc.nick)}: ?", "", content)
