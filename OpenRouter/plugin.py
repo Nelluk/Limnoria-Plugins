@@ -245,8 +245,10 @@ class OpenRouter(callbacks.Plugin):
             if engine in ("native", "exa"):
                 web_search_options["engine"] = engine
 
-            request_params["plugins"] = [{"id": "web"}]
-            request_params["web_search_options"] = web_search_options
+            extra_body = request_params.get("extra_body") or {}
+            extra_body["plugins"] = [{"id": "web"}]
+            extra_body["web_search_options"] = web_search_options
+            request_params["extra_body"] = extra_body
 
         # --------------------------------------------------------------- #
         # Log exact request payload (always on)
