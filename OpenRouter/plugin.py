@@ -233,6 +233,7 @@ class OpenRouter(callbacks.Plugin):
                 max_results = int(self.registryValue("web_max_results", channel))
             except Exception:
                 max_results = 5
+            search_prompt = self.registryValue("web_search_prompt", channel)
             if max_results < 1:
                 max_results = 1
             if max_results > 10:
@@ -242,6 +243,8 @@ class OpenRouter(callbacks.Plugin):
                 "search_context_size": search_context_size,
                 "max_results": max_results,
             }
+            if search_prompt:
+                web_search_options["search_prompt"] = search_prompt
             if engine in ("native", "exa"):
                 web_search_options["engine"] = engine
 

@@ -181,6 +181,20 @@ conf.registerChannelValue(
 
 conf.registerChannelValue(
     OpenRouter,
+    "web_search_prompt",
+    registry.String(
+        "Use web results to answer. Be concise (2-3 sentences). "
+        "Do not include citations or URLs unless explicitly asked.",
+        _(
+            """
+            Prompt controlling how web search results should be used.
+            """
+        ),
+    ),
+)
+
+conf.registerChannelValue(
+    OpenRouter,
     "web_show_sources",
     registry.Boolean(
         False,

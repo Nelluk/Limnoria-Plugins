@@ -48,6 +48,7 @@ A tiny Limnoria/Supybot plugin that turns your IRC bot into a front‑end for an
 @config plugins.openrouter.web_engine auto
 @config plugins.openrouter.web_search_context_size medium
 @config plugins.openrouter.web_max_results 5
+@config plugins.openrouter.web_search_prompt "Use web results to answer. Be concise (2-3 sentences). Do not include citations or URLs unless explicitly asked."
 @config plugins.openrouter.web_show_sources False
 
 # Conversation isolation (new)
