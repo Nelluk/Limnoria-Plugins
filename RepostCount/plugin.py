@@ -9,7 +9,6 @@ import supybot.world as world
 import time
 import re
 from urllib.parse import urlparse, urlunsplit, parse_qs, urlencode
-from supybot import registry
 # import pprint  # For pretty printing in debug logs
 import supybot.ircdb as ircdb
 
@@ -133,8 +132,10 @@ class RepostCount(callbacks.Plugin):
 
     def _is_ignored_nick(self, nick):
         """Return True if nick is in ignoredNicks (raw case-insensitive match)."""
-        ignored = self.registryValue('ignoredNicks') or ''
-        ignored_set = {n.lower() for n in ignored.split() if n}
+        ignored = self.registryValue('ignoredNicks') or []
+        if isinstance(ignored, str):
+            ignored = ignored.split()
+        ignored_set = {n.lower() for n in ignored if n}
         return (nick or '').lower() in ignored_set
 
     def _merge_alias(self, primary, alias):
@@ -175,7 +176,7 @@ class RepostCount(callbacks.Plugin):
         """Handle incoming messages and check for reposts."""
         channel = msg.args[0]
         
-        if irc.isChannel(channel) and channel == self.registryValue('channel'):
+        if irc.isChannel(channel) and channel == self.registryValue('channel', channel, irc.network):
             text = msg.args[1]
             url = self._extract_url(text)
             
@@ -342,10 +343,3 @@ class RepostCount(callbacks.Plugin):
     aliases = wrap(aliases, ['owner'])
 
 Class = RepostCount
-
-# Register the plugin
-conf.registerPlugin('RepostCount')
-conf.registerChannelValue(conf.supybot.plugins.RepostCount, 'channel',
-    registry.String('', """The channel where the RepostCount should be active."""))
-conf.registerGlobalValue(conf.supybot.plugins.RepostCount, 'ignoredNicks',
-    registry.String('', """Space-separated nicks to ignore for repost penalties/replies (case-insensitive raw nick match)."""))

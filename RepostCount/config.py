@@ -6,3 +6,18 @@ def configure(advanced):
     conf.registerPlugin('RepostCount', True)
 
 RepostCount = conf.registerPlugin('RepostCount')
+
+conf.registerChannelValue(
+    RepostCount,
+    'channel',
+    registry.String('', """The channel where the RepostCount should be active."""),
+)
+
+conf.registerGlobalValue(
+    RepostCount,
+    'ignoredNicks',
+    registry.SpaceSeparatedListOfStrings(
+        [],
+        """Space-separated nicks to ignore for repost penalties/replies (case-insensitive raw nick match).""",
+    ),
+)

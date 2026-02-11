@@ -24,22 +24,23 @@ RepostCount is a plugin for the Limnoria IRC bot that tracks and counts reposts 
 
 ## Configuration
 
-Before using the plugin, you need to set the channel where it should be active:
+Before using the plugin, set the channel where it should be active:
 
 ```
-@set RepostCount.channel #yourchannel
+@config plugins.repostcount.channel #yourchannel
 ```
 
 Optional: set nicks that should not receive repost penalties/replies:
 
 ```
-@set RepostCount.ignoredNicks "Nick1 Nick2 Nick3"
+@config plugins.repostcount.ignorednicks "Nick1 Nick2 Nick3"
 ```
 
 Notes:
-- `ignoredNicks` is space-separated.
+- `ignoredNicks` is a space-separated list.
 - Matching is case-insensitive.
 - Matching is done against the raw nick (not alias/canonical nick).
+- Use `@config list plugins.repostcount` to see all available RepostCount settings.
 
 ## Usage
 
