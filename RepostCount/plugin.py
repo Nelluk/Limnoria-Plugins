@@ -131,6 +131,12 @@ class RepostCount(callbacks.Plugin):
             n = self.alias_map[n]
         return n
 
+    def _is_ignored_nick(self, nick):
+        """Return True if nick is in ignoredNicks (raw case-insensitive match)."""
+        ignored = self.registryValue('ignoredNicks') or ''
+        ignored_set = {n.lower() for n in ignored.split() if n}
+        return (nick or '').lower() in ignored_set
+
     def _merge_alias(self, primary, alias):
         """Alias 'alias' to 'primary' and merge counts into primary."""
         p = self._canonical_nick(primary)
@@ -184,6 +190,10 @@ class RepostCount(callbacks.Plugin):
                     
                     # Compare canonical nicks to avoid counting case or aliases
                     if self._canonical_nick(nick) != self._canonical_nick(original_poster):
+                        if self._is_ignored_nick(nick):
+                            self.log.debug(f"Ignored repost penalty for configured nick: {nick}")
+                            return
+
                         time_diff = current_time - post_time
                         hours, remainder = divmod(time_diff, 3600)
                         minutes, _ = divmod(remainder, 60)
@@ -337,3 +347,5 @@ Class = RepostCount
 conf.registerPlugin('RepostCount')
 conf.registerChannelValue(conf.supybot.plugins.RepostCount, 'channel',
     registry.String('', """The channel where the RepostCount should be active."""))
+conf.registerGlobalValue(conf.supybot.plugins.RepostCount, 'ignoredNicks',
+    registry.String('', """Space-separated nicks to ignore for repost penalties/replies (case-insensitive raw nick match)."""))

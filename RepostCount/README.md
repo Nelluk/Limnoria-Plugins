@@ -30,6 +30,17 @@ Before using the plugin, you need to set the channel where it should be active:
 @set RepostCount.channel #yourchannel
 ```
 
+Optional: set nicks that should not receive repost penalties/replies:
+
+```
+@set RepostCount.ignoredNicks "Nick1 Nick2 Nick3"
+```
+
+Notes:
+- `ignoredNicks` is space-separated.
+- Matching is case-insensitive.
+- Matching is done against the raw nick (not alias/canonical nick).
+
 ## Usage
 
 - The plugin will automatically track links posted in the specified channel.
