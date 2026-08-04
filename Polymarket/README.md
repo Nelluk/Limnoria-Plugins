@@ -25,7 +25,7 @@ This plugin for Supybot (Limnoria) allows users to fetch and display current odd
 
 ## Usage
 
-The plugin provides a single command: `polymarket`
+The plugin provides two commands: `polymarket` and `polymarkets`.
 
 ### Syntax
 
@@ -54,6 +54,25 @@ Where `<query>` can be either a Polymarket URL or a search term.
    ```
    NFL Sunday: Packers vs Bears: 58% (🔺2.0%) (Packers) | Cowboys vs Giants: 62% (🔻1.5%) (Cowboys) | 49ers vs Rams: 55% (🔺0.5%) (49ers)
    ```
+
+### Multiple events
+
+```
+@polymarkets <event-slug-or-url-one> <event-slug-or-url-two> ...
+```
+
+`polymarkets` accepts either full Polymarket event URLs or bare event slugs.
+Bare slugs are looked up exactly, which makes it possible to include more
+events in one IRC command than with full URLs.
+
+Example:
+
+```
+@polymarkets fed-decision-in-october government-shutdown-by-friday
+```
+
+The singular `polymarket` command continues to treat non-URL input as a
+keyword search.
 
 ## Notes
 

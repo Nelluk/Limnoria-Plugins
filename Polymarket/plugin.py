@@ -24,7 +24,7 @@ import supybot.log as log
 import requests
 import builtins
 import json
-from urllib.parse import urlparse, quote
+from urllib.parse import urlparse, quote, unquote
 import warnings
 import pyshorteners
 from requests.exceptions import Timeout, ConnectionError
@@ -62,7 +62,33 @@ class Polymarket(callbacks.Plugin):
             return outcomes[0]
         return market.get('slug', 'Market')
 
-    def _parse_polymarket_event(self, query, is_url=True, max_responses=12):
+    def _event_slug_from_url(self, query: str) -> str:
+        """Extract the event slug from a Polymarket event URL.
+
+        Event URLs may include a market slug after the event slug, so use the
+        path segment immediately following ``/event/``. Query parameters such
+        as ``?tid=...`` are intentionally ignored.
+        """
+        parsed_url = urlparse(query)
+        path_parts = [part for part in parsed_url.path.split('/') if part]
+
+        for index, part in enumerate(path_parts):
+            if part.lower() == 'event':
+                if index + 1 < len(path_parts):
+                    return unquote(path_parts[index + 1])
+                return ''
+
+        # Preserve the old fallback for URL-like inputs that do not contain an
+        # /event/ path, while avoiding an IndexError for an empty path.
+        return unquote(path_parts[-1]) if path_parts else ''
+
+    def _parse_polymarket_event(
+        self,
+        query,
+        is_url=True,
+        max_responses=12,
+        exact_slug=False,
+    ):
         """
         Parse Polymarket event data from API response.
         
@@ -70,22 +96,27 @@ class Polymarket(callbacks.Plugin):
             query (str): URL or search string
             is_url (bool): True if query is a URL, False if it's a search string
             max_responses (int): Maximum number of outcomes to return
+            exact_slug (bool): Resolve a bare event slug through the exact
+                event-by-slug endpoint instead of public search
 
         Returns:
             dict: Parsed event data with title and outcomes
         """
-        # Prepare API query
+        # Prepare API query. URLs and explicitly slug-based queries retain
+        # their hyphenated slug; ordinary search queries retain search text.
         if is_url:
-            parsed_url = urlparse(query)
-            path_parts = parsed_url.path.split('/')
-            slug = ' '.join(path_parts[-1].split('-'))
+            slug = self._event_slug_from_url(query)
         else:
             slug = query
 
-        encoded_slug = quote(slug)
-        # Choose search endpoint. Use optimized for keyword searches to mirror site behavior.
-        if is_url:
-            api_url = f"https://gamma-api.polymarket.com/public-search?q={encoded_slug}"
+        if not slug:
+            return {'title': "No matching event found", 'data': [], 'slug': ''}
+
+        encoded_slug = quote(slug, safe='')
+        # URLs and bare slugs are exact event lookups. Keyword searches use the
+        # optimized public-search endpoint to mirror site behavior.
+        if is_url or exact_slug:
+            api_url = f"https://gamma-api.polymarket.com/events/slug/{encoded_slug}"
         else:
             api_url = (
                 "https://gamma-api.polymarket.com/public-search?q="
@@ -96,11 +127,14 @@ class Polymarket(callbacks.Plugin):
         
         # Fetch data from API
         response = requests.get(api_url, verify=False)
+        if response.status_code == 404 and (is_url or exact_slug):
+            log.debug(f"Polymarket: Event slug not found: {slug}")
+            return {'title': "No matching event found", 'data': [], 'slug': ''}
         response.raise_for_status()
         data = response.json()
 
-        # Fallback to non-optimized endpoint if optimized yields no events
-        if (not data or 'events' not in data or not data['events']) and not is_url:
+        # Fallback to non-optimized endpoint if optimized yields no events.
+        if (not data or 'events' not in data or not data['events']) and not is_url and not exact_slug:
             fallback_url = f"https://gamma-api.polymarket.com/public-search?q={encoded_slug}"
             log.debug(f"Polymarket: Optimized search empty, falling back to: {fallback_url}")
             response = requests.get(fallback_url, verify=False)
@@ -109,16 +143,29 @@ class Polymarket(callbacks.Plugin):
 
         log.debug(f"Polymarket: API response data: {data}")  # Log the raw API response
 
-        if not data or 'events' not in data or not data['events']:
+        # The exact event-by-slug endpoint returns one event object, while
+        # public-search returns an object containing an ``events`` list.
+        if is_url or exact_slug:
+            if isinstance(data, dict) and 'events' in data:
+                events = data.get('events', [])
+            elif isinstance(data, dict) and data.get('slug'):
+                events = [data]
+            elif isinstance(data, list):
+                events = data
+            else:
+                events = []
+        else:
+            events = data.get('events', []) if isinstance(data, dict) else []
+
+        if not events:
             return {'title': "No matching event found", 'data': [], 'slug': ''}
 
         # Find matching event
-        if is_url:
-            matching_event = next((event for event in data['events'] if event['slug'] == slug.replace(' ', '-')), None)
+        if is_url or exact_slug:
+            matching_event = next((event for event in events if event.get('slug') == slug), None)
         else:
             # Prefer the first event that has at least one active and unclosed market.
             # If none, fall back to the top event from the API response.
-            events = data.get('events', [])
             matching_event = next(
                 (
                     e
@@ -478,10 +525,11 @@ class Polymarket(callbacks.Plugin):
     polymarket = wrap(polymarket, ['text'])
 
     def polymarkets(self, irc, msg, args, text):
-        """<market-name-one> <market-name-two> ...
+        """<event-slug-or-url-one> <event-slug-or-url-two> ...
         
         Fetches and displays the current odds from Polymarket for multiple queries.
-        Each market name should have words separated by hyphens.
+        Each input may be a full Polymarket event URL or a bare hyphenated
+        event slug. Bare slugs are resolved exactly, rather than searched.
         """
 
         log.debug("msg", msg, "text", text)
@@ -493,8 +541,11 @@ class Polymarket(callbacks.Plugin):
         seen_words = set()  # Track words from previous market titles
         for query in queries:
             is_url = query.startswith('http://') or query.startswith('https://')
-            query = query.replace('-', ' ') if not is_url else query
-            result = self._parse_polymarket_event(query, is_url=is_url)
+            result = self._parse_polymarket_event(
+                query,
+                is_url=is_url,
+                exact_slug=not is_url,
+            )
             log.debug(f"Processing query: {query}")
             if result['data']:
                 market_title = result['title']  # Get the title from the result
