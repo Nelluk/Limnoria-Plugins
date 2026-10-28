@@ -69,7 +69,9 @@ class Kalshi(callbacks.Plugin):
                 # Check if any market in the series is currently open
                 if series.get('markets'):
                     for market in series['markets']:
-                        open_time = datetime.strptime(market['open_ts'], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=pytz.UTC)
+                        open_ts = market['open_ts']
+                        time_format = "%Y-%m-%dT%H:%M:%S.%fZ" if '.' in open_ts else "%Y-%m-%dT%H:%M:%SZ"
+                        open_time = datetime.strptime(open_ts, time_format).replace(tzinfo=pytz.UTC)
                         if open_time <= now:
                             open_series = series
                             break
