@@ -4,6 +4,7 @@ Limnoria plugin for displaying Kalshi prediction market information.
 
 import supybot
 import supybot.world as world
+from importlib import reload
 
 # Use this for the version of this plugin.  You may wish to put a CVS keyword
 # in here if you're keeping the plugin in CVS or some similar system.
@@ -23,6 +24,8 @@ from . import config
 
 # Load our plugin class
 from . import plugin
+# Refresh the cached implementation when Limnoria reloads this package.
+reload(plugin)
 
 if world.testing:
     from . import test
