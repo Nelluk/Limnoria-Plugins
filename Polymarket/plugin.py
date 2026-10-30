@@ -8,6 +8,11 @@ Implementation notes and gotchas:
 - Search flow uses the optimized public-search endpoint first and falls back to
   the plain endpoint if no events are returned. Optimized results sometimes omit
   fields such as `clobTokenIds`; `_ensure_clob_ids` enriches them via detail endpoints.
+- Polymarket search ranks broad, popular events (e.g. national Senate/House
+  control) above specific ones, so results are re-ranked locally by how well the
+  title/slug matches the query words.
+- `polymarket` treats a hyphenated query without spaces as an event slug and tries
+  an exact lookup before searching.
 - Markets can present missing or stringified arrays. `_as_list` normalizes these,
   and pricing falls back to `bestAsk`/`bestBid`/`lastTradePrice` for Yes/No markets.
 - URL shortening is optional. `_shorten_url` tries TinyURL with fallbacks; it logs
@@ -24,6 +29,7 @@ import supybot.log as log
 import requests
 import builtins
 import json
+import re
 from urllib.parse import urlparse, quote, unquote
 import warnings
 import pyshorteners
@@ -31,6 +37,17 @@ from requests.exceptions import Timeout, ConnectionError
 
 # Suppress InsecureRequestWarning
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+
+# Common words that should not count toward a search match.
+SEARCH_STOPWORDS = {
+    'a', 'an', 'and', 'be', 'by', 'for', 'in', 'is', 'of', 'on', 'or',
+    'the', 'to', 'what', 'which', 'who', 'will',
+}
+
+
+def _search_words(text):
+    return set(re.findall(r'[a-z0-9]+', (text or '').lower())) - SEARCH_STOPWORDS
+
 
 class Polymarket(callbacks.Plugin):
     """Fetches and displays odds from Polymarket"""
@@ -120,7 +137,7 @@ class Polymarket(callbacks.Plugin):
         else:
             api_url = (
                 "https://gamma-api.polymarket.com/public-search?q="
-                f"{encoded_slug}&optimized=true&limit_per_type=1&type=events&search_tags=true&search_profiles=true&cache=true"
+                f"{encoded_slug}&optimized=true&limit_per_type=10&type=events&search_tags=true&search_profiles=true&cache=true"
             )
         
         log.debug(f"Polymarket: Fetching data from API URL: {api_url}")
@@ -164,20 +181,7 @@ class Polymarket(callbacks.Plugin):
         if is_url or exact_slug:
             matching_event = next((event for event in events if event.get('slug') == slug), None)
         else:
-            # Prefer the first event that has at least one active and unclosed market.
-            # If none, fall back to the top event from the API response.
-            matching_event = next(
-                (
-                    e
-                    for e in events
-                    # Use builtins.any to avoid shadowing by supybot.commands.any
-                    if builtins.any(
-                        m.get('active', True) and not m.get('closed', False)
-                        for m in e.get('markets', [])
-                    )
-                ),
-                (events[0] if events else None),
-            )
+            matching_event = self._best_search_event(events, slug)
 
         if not matching_event:
             return {'title': "No matching event found", 'data': [], 'slug': ''}
@@ -283,6 +287,35 @@ class Polymarket(callbacks.Plugin):
         log.debug(f"Polymarket: Parsed event data: {result}")
         
         return result
+
+    def _best_search_event(self, events: list, query: str) -> dict:
+        """Pick the search result that best matches the query.
+
+        Prefers events with an open market, then an exact slug match, then the
+        share of query words found in the title or slug. Ties keep Polymarket's
+        own order, which favors higher-volume events.
+        """
+        query_words = _search_words(query)
+        query_slug = '-'.join(query.lower().split())
+
+        def rank(indexed_event):
+            index, event = indexed_event
+            # Use builtins.any to avoid shadowing by supybot.commands.any
+            has_open_market = builtins.any(
+                m.get('active', True) and not m.get('closed', False)
+                for m in event.get('markets', [])
+            )
+            exact_slug = event.get('slug', '').lower() == query_slug
+            event_words = _search_words(
+                f"{event.get('title', '')} {event.get('slug', '')}"
+            )
+            overlap = (
+                len(query_words & event_words) / len(query_words)
+                if query_words else 0
+            )
+            return (not has_open_market, not exact_slug, -overlap, index)
+
+        return min(enumerate(events), key=rank)[1] if events else None
 
     def _ensure_clob_ids(self, event_slug: str, markets: list) -> list:
         """Ensure markets include clobTokenIds by fetching enriched data when available.
@@ -467,7 +500,17 @@ class Polymarket(callbacks.Plugin):
         """
         try:
             is_url = query.startswith('http://') or query.startswith('https://')
-            result = self._parse_polymarket_event(query, is_url=is_url)
+            result = None
+            # A hyphenated query with no spaces is probably an event slug, so
+            # try it exactly before falling back to search.
+            if not is_url and '-' in query and len(query.split()) == 1:
+                result = self._parse_polymarket_event(
+                    query, is_url=False, exact_slug=True
+                )
+                if not result['data']:
+                    result = None
+            if result is None:
+                result = self._parse_polymarket_event(query, is_url=is_url)
             log.debug(
                 f"Polymarket: result summary -> title={result.get('title')}, slug={result.get('slug')}, count={len(result.get('data', []))}"
             )
